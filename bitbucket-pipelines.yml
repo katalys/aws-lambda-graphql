@@ -1,0 +1,34 @@
+image: node:12
+
+pipelines:
+  default:
+    - step:
+        name: Run tests
+        caches:
+          - npm
+        script:
+          - npm install
+          - npm run build
+          - npm run test
+
+  tags:
+    v*:
+      - step:
+          name: Run tests
+          caches:
+            - npm
+          script:
+            - npm install
+            - npm run test
+      - step:
+          name: Package module
+          caches:
+            - npm
+          script:
+            - npm install
+            - npm run build
+            - grep -v dist/ < .gitignore .gitignore-new
+            - mv .gitignore-new .gitignore
+            - git add .
+            - git commit -m 'adding dist/ via bitbucket-pipelines.yml'
+            - git push
