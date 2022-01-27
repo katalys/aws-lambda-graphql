@@ -1,0 +1,257 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: 'Apollo/GraphQL WebSocket+HTTP API'
+
+Parameters:
+  LambdaHandlerPath:
+    Description: Code path to lambda module
+    Type: String
+    Default: lib/lambda.handler
+  LambdaRuntime:
+    Description: Code runtime for the Lambda function
+    Type: String
+    Default: nodejs14.x
+  LambdaMemory:
+    Description: Megabytes of memory for the Lambda function
+    Type: Number
+    MinValue: '128'
+    Default: '512'
+  LambdaTimeout:
+    Description: Seconds before the Lambda will timeout
+    Type: Number
+    MinValue: '10'
+    Default: '120'
+  LogRegentionDays:
+    Description: Days to retain log messages in CloudWatch
+    Type: Number
+    MinValue: '1'
+    Default: '60'
+
+Resources:
+  #
+  # ApiGateway endpoint
+  #  Only dependency is a Lambda Function ARN
+  #
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${AWS::StackName}-HttpApi'
+      Description: 'GraphQL HTTP endpoint'
+      ProtocolType: HTTP
+      Target: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunction.Arn}/invocations'
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${AWS::StackName}-WebSockApi'
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: '$request.body.action'
+  LambdaApiGatewayPermission:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+      - WebSocketApi
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Principal: apigateway.amazonaws.com
+
+  WsApiLambdaIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      Description: Lambda catchall proxy
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunction.Arn}/invocations'
+
+  WsApiDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    DependsOn:
+      - WsApiConnectRoute
+      - WsApiDisconnectRoute
+      - WsApiDefaultRoute
+    Properties:
+      ApiId: !Ref WebSocketApi
+  WsApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      StageName: prod
+      ApiId: !Ref WebSocketApi
+      DeploymentId: !Ref WsApiDeployment
+
+  WsApiConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $connect
+      Target: !Sub 'integrations/${WsApiLambdaIntegration}'
+  WsApiDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      Target: !Sub 'integrations/${WsApiLambdaIntegration}'
+  WsApiDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $default
+      Target: !Sub 'integrations/${WsApiLambdaIntegration}'
+
+  #
+  # Lambda function
+  #
+  LambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: GraphQL/Apollo WebSocket handler
+      Code:
+        ZipFile: |
+          exports.handler = (event) => {
+            console.log("event received:", event);
+            throw new Error("NO CODE DEPLOYED YET");
+          }
+      Handler: !Ref LambdaHandlerPath
+      Runtime: !Ref LambdaRuntime
+      MemorySize: !Ref LambdaMemory
+      Timeout: !Ref LambdaTimeout
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Environment:
+        Variables:
+          CONNECTIONS_SQS_URL: !Ref EventsSqsQueue
+          CONNECTIONS_DYNAMO_TABLE: !Ref ConnectionsDynamoTable
+      Policies:
+        - AWSLambdaExecute # Managed Policy
+        - Version: '2012-10-17' # Policy Document
+          Statement:
+            - Effect: Allow
+              Action:
+                - execute-api:ManageConnections
+              Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/development/POST/@src/*'
+            - Effect: Allow
+              Action:
+                - dynamodb:BatchWriteItem
+                - dynamodb:DeleteItem
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:Query
+              Resource: !GetAtt ConnectionsDynamoTable.Arn
+            - Effect: Allow
+              Action:
+                - sqs:SendMessage
+                - sqs:SendMessageBatch
+                - sqs:DeleteMessage
+                - sqs:ChangeMessageVisibility
+                - sqs:ReceiveMessage
+              Resource: !GetAtt EventsSqsQueue.Arn
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt EventsSqsQueue.Arn
+            BatchSize: 10
+            # If BatchSize >10, must define extra keys
+            #BatchSize: 25
+            #MaximumBatchingWindowInSeconds: 3
+
+  LambdaFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${LambdaFunction}'
+      RetentionInDays: !Ref LogRegentionDays
+
+  #
+  # Data sources
+  #  @see DynamoDBSubscriptionManager
+  #  @see DynamoDBConnectionManager
+  #
+  ConnectionsDynamoTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: opId
+          AttributeType: S
+        - AttributeName: evt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: opId
+          KeyType: RANGE
+          # ex: IConnection: id={connectionId}, range=""
+            # Need to lookup via GUID
+          # ex: SubscriptionOperation: id={connectionId}, opId={operationId}
+            # Need to look up by GUID
+          # ex: ISubscription: id={connectionId}, opId={operationId}, evt:{eventName}
+            # Add key "eventNames" to include in index
+      GlobalSecondaryIndexes:
+        - IndexName: EventNames
+          Projection:
+            ProjectionType: INCLUDE
+            NonKeyAttributes:
+              - ttl
+          KeySchema:
+            - AttributeName: evt
+              KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # @see DynamoDBEventStore
+  EventsSqsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 86400
+      ReceiveMessageWaitTimeSeconds: 10
+      # This must be >= timeout for lambda function
+      VisibilityTimeout: !Ref LambdaTimeout
+
+  # use this policy (and Managed-CachingDisabled) when creating
+  # a CloudFront distribution origin to the WebSocketApi endpoint
+#  CloudFrontCachePolicy:
+#    Type: AWS::CloudFront::OriginRequestPolicy
+#    Properties:
+#      OriginRequestPolicyConfig:
+#        Name: !Sub '${AWS::StackName}-Policy'
+#        Comment: 'WebSocket-safe request policy'
+#        CookiesConfig:
+#          CookieBehavior: none
+#        QueryStringsConfig:
+#          QueryStringBehavior: all
+#        HeadersConfig:
+#          HeaderBehavior: whitelist
+#          Headers:
+#            - Accept
+#            - Authorization
+#            - Origin
+#            - Referer
+#            - User-Agent
+#            - Sec-WebSocket-Key
+#            - Sec-WebSocket-Version
+#            - Sec-WebSocket-Protocol
+#            - Sec-WebSocket-Accept
+#            - Sec-WebSocket-Extensions
+
+Outputs:
+  HttpURI:
+    Description: 'HTTP endpoint for POST/GraphQL queries'
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/'
+  WebSocketURI:
+    Description: 'WSS Protocol URI to connect to'
+    Value: !Sub 'wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${WsApiStage}'
+  ConnectionsDynamoTable:
+    Description: 'DynamoDB Assets table name'
+    Value: !Ref ConnectionsDynamoTable
+  ConnectionsDynamoTableARN:
+    Description: 'DynamoDB Assets table ARN'
+    Value: !GetAtt ConnectionsDynamoTable.Arn
+  EventsSqsQueueURL:
+    Description: 'SQS queue URL for publishing events to waiting subscribers'
+    Value: !Ref EventsSqsQueue
+  LambdaFunctionARN:
+    Description: 'Server function ARN'
+    Value: !GetAtt LambdaFunction.Arn
+  LambdaFunctionRoleARN:
+    Description: 'Server function IAM Role ARN'
+    Value: !GetAtt LambdaFunctionRole.Arn
