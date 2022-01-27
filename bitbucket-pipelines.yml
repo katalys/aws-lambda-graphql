@@ -5,7 +5,7 @@ pipelines:
     - step:
         name: Run tests
         caches:
-          - npm
+          - node
         script:
           - npm install
           - npm run build
@@ -16,14 +16,14 @@ pipelines:
       - step:
           name: Run tests
           caches:
-            - npm
+            - node
           script:
             - npm install
             - npm run test
       - step:
           name: Package module
           caches:
-            - npm
+            - node
           script:
             - npm install
             - npm run build
