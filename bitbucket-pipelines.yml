@@ -25,9 +25,6 @@ pipelines:
           caches:
             - node
           script:
-            - >
-              tagName=$(echo "$BITBUCKET_TAG" | cut -c 5-);
-              [ -n "$BITBUCKET_TAG" ] && echo "Creating: $tagName" || exit 1
             - npm install
             - npm run build
             - >
@@ -35,5 +32,8 @@ pipelines:
               && mv .gitignore-new .gitignore
               && git add .
               && git commit -m 'adding dist/ via bitbucket-pipelines.yml'
-            - git tag -a "$tagName" -m "created from $BITBUCKET_TAG"
-            - git push origin "$tagName"
+            - >
+              tagName=$(echo "$BITBUCKET_TAG" | cut -c 5-);
+              [ -n "$BITBUCKET_TAG" ] && echo "Creating: $tagName" || exit 1;
+              git tag -a "$tagName" -m "created from $BITBUCKET_TAG"
+              && git push origin "$tagName"
