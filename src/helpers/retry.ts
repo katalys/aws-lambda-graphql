@@ -10,7 +10,7 @@ const logger = loggerFromCaller(__filename);
  * @param config Backoff configuration
  */
 export async function retryFunc<T>(
-    func: () => T,
+    func: () => Promise<T>|T,
     config: number | {
         onFail?: (err: Error, remaining: number) => void,
         // Initial interval. It will eventually go as high as maxInterval.
