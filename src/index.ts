@@ -6,7 +6,6 @@ export * from "./DynamoDBSubscriptionManager";
 export * from "./DynamoDBRangeSubscriptionManager";
 export * from "./execute";
 export * from "./errors";
-export * from "./helpers";
 export * from "./protocol";
 export * from "./types";
 export * from "./PubSub";
