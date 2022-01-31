@@ -221,14 +221,18 @@ export class Server extends ApolloServer {
         const wsHandler = new WebSocketEventHandler(this, this.subscriptionOptions);
 
         return (event, context, cb) => {
-            // ApiGateway V1 / V2 HTTP request
+            // ApiGateway V1 HTTP request
             if (event.httpMethod) {
                 return httpHandler(event, context, cb);
             }
 
-            // ApiGateway V2 WebSocket event
+            // ApiGateway V2
             if (event.requestContext) {
-                return wsHandler.handle(event, context);
+                return event.requestContext.connectionId
+                    // ApiGateway V2 WebSocket event
+                    ? wsHandler.handle(event, context)
+                    // ApiGateway V2 HTTP event
+                    : httpHandler(event, context, cb);
             }
 
             // DynamoDB Stream notification
