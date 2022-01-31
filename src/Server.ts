@@ -21,6 +21,7 @@ import { WebSocketEventHandler } from "./WebSocketEventHandler";
 import { DynamoDBStreamHandler } from "./DynamoDBStreamHandler";
 import { ArrayPubSub } from "./ArrayPubSub";
 import { SQSEventHandler } from "./SQSEventHandler";
+import { loggerFromCaller } from "./helpers";
 
 export interface ServerConfig<TServer extends object> extends Omit<Config, "context" | "subscriptions"> {
     /**
@@ -219,33 +220,44 @@ export class Server extends ApolloServer {
         const dynHandler = new DynamoDBStreamHandler(this);
         const sqsHandler = new SQSEventHandler(this);
         const wsHandler = new WebSocketEventHandler(this, this.subscriptionOptions);
+        const logger = loggerFromCaller(__filename);
 
         return (event, context, cb) => {
-            // ApiGateway V1 HTTP request
-            if (event.httpMethod) {
-                return httpHandler(event, context, cb);
-            }
+            const promise = (() => {
 
-            // ApiGateway V2
-            if (event.requestContext) {
-                return event.requestContext.connectionId
-                    // ApiGateway V2 WebSocket event
-                    ? wsHandler.handle(event, context)
-                    // ApiGateway V2 HTTP event
-                    : httpHandler(event, context, cb);
-            }
-
-            // DynamoDB Stream notification
-            if (event.Records) {
-                if (event.Records[0]?.dynamodb) {
-                    return dynHandler.handle(event, context);
+                // ApiGateway V1 HTTP request
+                if (event.httpMethod) {
+                    return httpHandler(event, context, cb);
                 }
-                return sqsHandler.handle(event, context);
+                // ApiGateway V2
+                else if (event.requestContext) {
+                    return event.requestContext.connectionId
+                        // ApiGateway V2 WebSocket event
+                        ? wsHandler.handle(event, context)
+                        // ApiGateway V2 HTTP event
+                        : httpHandler(event, context, cb);
+                }
+                // DynamoDB Stream notification
+                else if (event.Records) {
+                    if (event.Records[0]?.dynamodb) {
+                        return dynHandler.handle(event, context);
+                    } else {
+                        return sqsHandler.handle(event, context);
+                    }
+                }
+
+                throw new Error("Unknown event");
+            })();
+
+            if (promise) {
+                return promise.catch(err => {
+                    logger.error("FATAL:", err);
+                    logger.log("Original Event:", event);
+                    throw err;
+                });
             }
 
-            // eslint-disable-next-line no-console
-            console.error("UNKNOWN EVENT:", event);
-            throw new Error("Unknown event");
+            return promise;
         }
     }
 
