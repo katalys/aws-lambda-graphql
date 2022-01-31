@@ -1,0 +1,46 @@
+---
+env:
+  es6: true
+  node: true
+globals:
+  NodeJS: true
+extends:
+  - eslint:recommended
+  - plugin:promise/recommended
+  - plugin:import/errors
+  - plugin:import/warnings
+  - plugin:import/typescript
+  - "plugin:@typescript-eslint/recommended"
+plugins:
+  - promise
+  - import
+  - "@typescript-eslint"
+rules:
+  no-console: error
+  indent: [ error, 4, {
+    MemberExpression: off,
+    SwitchCase: 1
+  } ]
+  no-process-env: error
+  prefer-const: warn
+  quotes: [ error, double, { avoidEscape: true, allowTemplateLiterals: true } ]
+  curly: error
+  no-throw-literal: error
+  key-spacing: [ error, { afterColon: true, mode: minimum } ]
+  #brace-style: [ error, stroustrup ]
+  comma-spacing: [ error, { before: false, after: true } ]
+  comma-style: [ error, last, { exceptions: { VariableDeclaration: true } } ]
+  array-bracket-spacing: off # [ error, always, { singleValue: false } ]
+  computed-property-spacing: [ error, never ]
+  object-curly-spacing: [ error, always ]
+  #valid-jsdoc: [ warn, { prefer: { "arg": "param", "argument": "param", "class": "constructor", "return": "returns", "virtual": "abstract" } } ]
+  promise/no-nesting: off
+  promise/catch-or-return: [ error, { allowThen: true }]
+  promise/always-return: warn
+  promise/no-callback-in-promise: off
+  import/first: error
+  import/newline-after-import: error
+  import/no-named-as-default: off
+  import/no-extraneous-dependencies: [ error, { devDependencies: true } ]
+  no-dupe-class-members: off  # rely on TypeScript
+  "@typescript-eslint/ban-ts-comment": [ warn, { ts-ignore: allow-with-description, minimumDescriptionLength: 3 }]
