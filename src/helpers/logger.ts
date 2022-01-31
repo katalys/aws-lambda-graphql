@@ -1,7 +1,19 @@
 /* eslint-disable no-console */
-import { dirname } from "path";
+import { dirname, basename } from "path";
 
 type LogFn = (msg: string, ...args: unknown[]) => void;
+
+// Determine if one of the close parent directories is node_modules
+const isInNodeModules = (() => {
+    let path = dirname(dirname(__dirname));
+    for (let i = 3; i--; i > 0) {
+        path = dirname(path);
+        if (basename(path) === "node_modules") {
+            return true;
+        }
+    }
+    return false;
+})();
 
 export type Logger = {
     log: LogFn,
@@ -28,11 +40,15 @@ export function loggerWithNs(namespace: string): Logger {
 /**
  * Create a sub-logger that prefixes with the calling function.
  */
-export function loggerFromCaller(callerFile?: string): Logger {
+export function loggerFromCaller(callerFile?: string, includePackageName = isInNodeModules): Logger {
     callerFile = callerFile || getCallerFile();
     const curDir = dirname(dirname(__dirname)) + "/";
     if (callerFile.indexOf(curDir) === 0) {
         callerFile = callerFile.substr(curDir.length);
+        if (includePackageName) {
+            // prefix with one-directory-up path
+            callerFile = `${basename(dirname(curDir))}/${callerFile}`
+        }
     }
     return loggerWithNs(callerFile);
 }
