@@ -28,11 +28,11 @@ export type Logger = {
  */
 export function loggerWithNs(namespace: string): Logger {
     return {
-        error: console.error.bind(console, namespace, "ERROR"),
-        info: console.info.bind(console, namespace, "INFO"),
-        log: console.log.bind(console, namespace, "LOG"),
-        warn: console.warn.bind(console, namespace, "WARN"),
-        debug: console.debug.bind(console, namespace, "DEBUG"),
+        error: console.error.bind(console, namespace),
+        info: console.info.bind(console, namespace),
+        log: console.log.bind(console, namespace),
+        warn: console.warn.bind(console, namespace),
+        debug: console.debug.bind(console, namespace),
     };
 }
 
