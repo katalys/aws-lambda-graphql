@@ -49,7 +49,10 @@ export class WebSocketEventHandler {
             let response: undefined | string | APIGatewayProxyResult;
 
             // based on routeKey, do action
-            switch (event.requestContext.routeKey) {
+            if (this.options.debug) {
+                logger.debug(`Handling ApiGateway WebSocket.${routeKey}`);
+            }
+            switch (routeKey) {
                 case "$connect":
                     response = await this.onWebSocketConnect(event, context);
                     break;
@@ -63,13 +66,16 @@ export class WebSocketEventHandler {
                     throw new Error(`Invalid event ${routeKey} received`);
             }
 
-            if (typeof response === "object") {
-                return response;
+            if (typeof response !== "object") {
+                response = {
+                    body: response,
+                    statusCode: 200,
+                };
             }
-            return {
-                body: response,
-                statusCode: 200,
-            };
+            if (this.options.debug) {
+                logger.debug(`WebSocket.${routeKey} response:`, response);
+            }
+            return response;
 
         } catch (err: any) {
             if (err instanceof ProhibitedError) {

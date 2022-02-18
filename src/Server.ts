@@ -41,6 +41,8 @@ export interface ServerConfig<TServer extends object> extends Omit<Config, "cont
      */
     subscriptionManager: ISubscriptionManager;
     subscriptions?: {
+        debug?: boolean;
+
         /**
          * handlerTimeout is milliseconds to wait for any of these operation handlers.
          */
