@@ -143,15 +143,16 @@ export class WebSocketEventHandler {
             connectionData,
         );
 
+        // protocol-header will contain the name of the client protocol in use
+        const protocolHeader = event.headers?.["Sec-WebSocket-Protocol"] || "";
+
         return {
             body: "",
-            headers: event.headers?.["Sec-WebSocket-Protocol"]?.includes(
-                "graphql-ws",
-            )
-                ? {
-                    "Sec-WebSocket-Protocol": "graphql-ws",
-                }
-                : undefined,
+            headers: protocolHeader.includes("graphql-ws")
+                ? { "Sec-WebSocket-Protocol": "graphql-ws" }
+                : (protocolHeader.includes("graphql-transport-ws")
+                    ? { "Sec-WebSocket-Protocol": "graphql-transport-ws" }
+                    : undefined),
             statusCode: 200,
         };
     }

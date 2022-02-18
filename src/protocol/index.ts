@@ -1,8 +1,10 @@
 import { DocumentNode, ExecutionResult } from "graphql";
 
 export const enum CLIENT_EVENT_TYPES {
-  GQL_START = "start",
-  GQL_STOP = "stop",
+  GQL_START = "start", // renamed: start => subscribe
+  GQL_STOP = "stop", // renamed: stop => complete
+  GQL_PING = "ping",
+  GQL_PONG = "pong",
   GQL_CONNECTION_INIT = "connection_init",
   GQL_CONNECTION_TERMINATE = "connection_terminate",
 }
@@ -10,7 +12,9 @@ export const enum CLIENT_EVENT_TYPES {
 export const enum SERVER_EVENT_TYPES {
   GQL_CONNECTION_ACK = "connection_ack",
   GQL_ERROR = "error",
-  GQL_DATA = "data",
+  GQL_DATA = "next", // renamed: data => next
+  GQL_PING = "ping",
+  GQL_PONG = "pong",
   GQL_COMPLETE = "complete",
 }
 
@@ -33,6 +37,7 @@ interface GQLEvents {
    * https://github.com/apollographql/subscriptions-transport-ws/blob/master/src/client.ts#L324
    */
   [CLIENT_EVENT_TYPES.GQL_START]: GQLEventBase<CLIENT_EVENT_TYPES.GQL_START, {
+    type: CLIENT_EVENT_TYPES.GQL_START | "subscribe"; // << graphql-ws alternate type
     id: string;
     payload: {
       [key: string]: any;
@@ -72,9 +77,20 @@ interface GQLEvents {
   [CLIENT_EVENT_TYPES.GQL_CONNECTION_TERMINATE]: GQLEventBase<CLIENT_EVENT_TYPES.GQL_CONNECTION_TERMINATE, {
     // id is not sent
     // see https://github.com/apollographql/subscriptions-transport-ws/blob/master/src/client.ts#L170
-    payload?: {
-      [key: string]: any;
-    };
+    payload?: Record<string, any>;
+  }>;
+
+  /**
+   * Bidirectional - ping/pong
+   */
+  [CLIENT_EVENT_TYPES.GQL_PING]: GQLEventBase<SERVER_EVENT_TYPES.GQL_PING, {
+    payload?: Record<string, any>;
+  }>;
+  /**
+   * Bidirectional - ping/pong
+   */
+  [CLIENT_EVENT_TYPES.GQL_PONG]: GQLEventBase<SERVER_EVENT_TYPES.GQL_PONG, {
+    payload?: Record<string, any>;
   }>;
 
 
@@ -93,9 +109,7 @@ interface GQLEvents {
    */
   [SERVER_EVENT_TYPES.GQL_CONNECTION_ACK]: GQLEventBase<SERVER_EVENT_TYPES.GQL_CONNECTION_ACK, {
     id?: string;
-    payload?: {
-      [key: string]: any;
-    };
+    payload?: Record<string, any>;
   }>;
 
   /**
@@ -122,10 +136,16 @@ interface GQLEvents {
 }
 
 export function isGQLEvent<T extends GQLEventTypes>(type: T, event: any): event is GQLEvent<T> {
-    return (
-        event &&
-        typeof event === "object" &&
-        event.type === type
+    const found = event && typeof event === "object" && event.type;
+    return found === type || (
+        type === CLIENT_EVENT_TYPES.GQL_START
+        && found === "subscribe" // protocol change
+    ) || (
+        type === CLIENT_EVENT_TYPES.GQL_STOP
+        && found === "complete" // protocol change
+    ) || (
+        type === SERVER_EVENT_TYPES.GQL_DATA
+        && found === "data" // old alias
     );
 }
 
