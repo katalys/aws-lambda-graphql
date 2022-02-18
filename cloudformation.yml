@@ -125,13 +125,14 @@ Resources:
             - Effect: Allow
               Action:
                 - execute-api:ManageConnections
-              Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/development/POST/@src/*'
+              Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
             - Effect: Allow
               Action:
                 - dynamodb:BatchWriteItem
                 - dynamodb:DeleteItem
                 - dynamodb:GetItem
                 - dynamodb:PutItem
+                - dynamodb:UpdateItem
                 - dynamodb:Query
               Resource: !GetAtt ConnectionsDynamoTable.Arn
             - Effect: Allow
