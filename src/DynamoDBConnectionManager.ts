@@ -121,7 +121,7 @@ export class DynamoDBConnectionManager implements IConnectionManager {
                     TableName: this.connectionsTable,
                     Key: {
                         id: connectionId,
-                        opId: "",
+                        opId: "@", // cannot be empty, should be sorted first by UTF-8 code
                     },
                 })
                 .promise();
@@ -144,50 +144,62 @@ export class DynamoDBConnectionManager implements IConnectionManager {
     }
 
     async setConnectionData(
-        data: IConnection,
         { id }: DynamoDBConnection,
+        data: IConnection,
     ): Promise<void> {
-        await this.db
-            .update({
-                TableName: this.connectionsTable,
-                Key: {
-                    id,
-                    opId: ""
-                },
-                UpdateExpression: "set #data = :data",
-                ExpressionAttributeValues: {
-                    ":data": data,
-                },
-                ExpressionAttributeNames: {
-                    "#data": "data",
-                },
-            })
-            .promise();
+        assert.ok(id, "connection.id must be provided");
+        try {
+            await this.db
+                .update({
+                    TableName: this.connectionsTable,
+                    Key: {
+                        id,
+                        opId: "@", // cannot be empty, should be sorted first by UTF-8 code
+                    },
+                    UpdateExpression: "set #data = :data",
+                    ExpressionAttributeValues: {
+                        ":data": data,
+                    },
+                    ExpressionAttributeNames: {
+                        "#data": "data",
+                    },
+                })
+                .promise();
+        } catch (err) {
+            logger.error(`setConnectionData(${id}):`, err, data);
+            throw err;
+        }
     }
 
     async registerConnection({
         connectionId,
         endpoint,
     }: IConnectEvent): Promise<DynamoDBConnection> {
+        assert.ok(connectionId, "connectionId must be provided");
         const connection: IConnection = {
             id: connectionId,
             data: { endpoint, context: {}, isInitialized: false },
         };
         if (this.debug) {
-            logger.info(`Connection open ${connection.id}`, connection.data);
+            logger.debug(`Connection open ${connection.id}`, connection.data);
         }
-        await this.db
-            .put({
-                TableName: this.connectionsTable,
-                Item: {
-                    id: connection.id,
-                    opId: "",
-                    data: connection.data,
-                    createdAt: new Date().toString(),
-                    ttl: computeTTL(this.ttl),
-                },
-            })
-            .promise();
+        try {
+            await this.db
+                .put({
+                    TableName: this.connectionsTable,
+                    Item: {
+                        id: connection.id,
+                        opId: "@", // cannot be empty, should be sorted first by UTF-8 code
+                        data: connection.data,
+                        createdAt: new Date().toString(),
+                        ttl: computeTTL(this.ttl),
+                    },
+                })
+                .promise();
+        } catch (err) {
+            logger.error(`registerConnection():`, err);
+            throw err;
+        }
 
         return connection;
     }
@@ -196,9 +208,10 @@ export class DynamoDBConnectionManager implements IConnectionManager {
         connection: DynamoDBConnection,
         payload: string | Buffer,
     ): Promise<void> {
+        assert.ok(connection.id, "connection.id must be provided");
         try {
             if (this.debug) {
-                logger.info("sendToConnection", { id: connection.id });
+                logger.debug("sendToConnection", { id: connection.id });
             }
             await this.createApiGatewayManager(connection.data.endpoint)
                 .postToConnection({
@@ -212,12 +225,15 @@ export class DynamoDBConnectionManager implements IConnectionManager {
             if (e && e.statusCode === 410) {
                 await this.unregisterConnection(connection);
             } else {
+                logger.error(`sendToConnection():`, e)
                 throw e;
             }
         }
     }
 
     async unregisterConnection({ id }: DynamoDBConnection): Promise<void> {
+        assert.ok(id, "connection.id must be provided");
+
         if ((this.subscriptions as DynamoDBSubscriptionManager).subscriptionsTableName == this.connectionsTable) {
             return this.subscriptions.unsubscribeAllByConnectionId(id);
         }
@@ -228,7 +244,7 @@ export class DynamoDBConnectionManager implements IConnectionManager {
                     TableName: this.connectionsTable,
                     Key: {
                         id,
-                        opId: "",
+                        opId: "@", // cannot be empty, should be sorted first by UTF-8 code
                     },
                 })
                 .promise(),
@@ -237,8 +253,9 @@ export class DynamoDBConnectionManager implements IConnectionManager {
     }
 
     async closeConnection({ id, data }: DynamoDBConnection): Promise<void> {
+        assert.ok(id, "connection.id must be provided");
         if (this.debug) {
-            logger.info("Connection closed", id);
+            logger.debug("Connection closed", id);
         }
         await this.createApiGatewayManager(data.endpoint)
             .deleteConnection({ ConnectionId: id })
