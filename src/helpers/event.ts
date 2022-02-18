@@ -22,14 +22,19 @@ export class InvalidOperationError extends ExtendableError {
 export function parseOperationFromEvent(
     { body }: APIGatewayWebSocketEvent,
 ): GQLEvent<CLIENT_EVENT_TYPES> {
-    const operation: GQLEvent<CLIENT_EVENT_TYPES> = JSON.parse(body);
-
+    let operation: GQLEvent<CLIENT_EVENT_TYPES> | undefined;
+    try {
+        operation = JSON.parse(body);
+    } catch (err) {
+        // no-op
+    }
     if (typeof operation !== "object" || operation == null) {
-        throw new MalformedOperationError();
+        throw new MalformedOperationError("body is not a JSON object");
     }
 
-    if (operation.type == null) {
-        throw new MalformedOperationError("Type is missing");
+    const { type } = operation;
+    if (!type) {
+        throw new MalformedOperationError("body.type is empty");
     }
 
     if (
@@ -58,7 +63,5 @@ export function parseOperationFromEvent(
         // };
     }
 
-    throw new InvalidOperationError(
-        "Only GQL_CONNECTION_INIT, GQL_CONNECTION_TERMINATE, GQL_START or GQL_STOP operations are accepted",
-    );
+    throw new InvalidOperationError("unknown body.type value");
 }
