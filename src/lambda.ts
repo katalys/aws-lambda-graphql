@@ -5,11 +5,36 @@ import { DynamoDBSubscriptionManager } from "./DynamoDBSubscriptionManager";
 import { DynamoDBConnectionManager } from "./DynamoDBConnectionManager";
 import { Server } from "./Server";
 import { SQSEventStore } from "./SQSEventStore";
-import { GraphQLSchema } from "graphql";
+import { buildSchema, GraphQLSchema } from "graphql";
+
+const schema = buildMergedSchema()
+const lambdaHandler = makeServer(schema).createHandler();
+
+export const handler: typeof lambdaHandler = (event, context, cb) => {
+    console.debug("Received Event:", event);
+    return lambdaHandler(event, context, cb);
+}
+
+function buildMergedSchema(): GraphQLSchema {
+    const pubSub = new PubSub({
+        eventStore: new SQSEventStore({
+            queueUrl: process.env.CONNECTIONS_SQS_URL || ""
+        })
+    });
+    console.warn(`Using empty testing schema`);
+    return buildSchema(`
+        type Query { test: String }
+        type Subscription { test: String }
+        type Mutation { test: String }
+    `);
+}
 
 export function makeServer(schema: GraphQLSchema): Server {
     const IS_TEST = !!process.env.IS_TEST;
-    const dynamoTable = process.env.CONNECTIONS_DYNAMO_TABLE || "";
+    let dynamoTable = process.env.CONNECTIONS_DYNAMO_TABLE || "";
+    if (dynamoTable.indexOf("/") > 0) {
+        dynamoTable = dynamoTable.split("/")[1];
+    }
 
     const dynamoDbClient = new DynamoDB.DocumentClient({
         // use serverless-dynamodb endpoint in offline mode
@@ -27,6 +52,9 @@ export function makeServer(schema: GraphQLSchema): Server {
 
     return new Server({
         schema,
+        subscriptions: {
+            debug: true,
+        },
         subscriptionManager,
         connectionManager: new DynamoDBConnectionManager({
             // this one is weird but we don't care because you'll use it only if you want to use serverless-offline
@@ -43,6 +71,7 @@ export function makeServer(schema: GraphQLSchema): Server {
             dynamoDbClient,
             connectionsTable: dynamoTable,
             subscriptions: subscriptionManager,
+            debug: true,
         }),
 
         // use serverless-offline endpoint in offline mode
@@ -55,23 +84,3 @@ export function makeServer(schema: GraphQLSchema): Server {
             : {}),
     });
 }
-
-function buildMergedSchema(pubSub: PubSub): GraphQLSchema {
-    throw new Error("Not implemented");
-}
-
-const schema = buildMergedSchema(new PubSub({
-    eventStore: new SQSEventStore({
-        queueUrl: process.env.CONNECTIONS_SQS_URL || ""
-    })
-}))
-
-export const lambdaHandler = makeServer(schema).createHandler();
-
-export const handler: typeof lambdaHandler
-    = process.env.DEBUG
-        ? (event, context, cb) => {
-            console.debug("DEBUG Event:", event);
-            return lambdaHandler(event, context, cb);
-        }
-        : lambdaHandler;
