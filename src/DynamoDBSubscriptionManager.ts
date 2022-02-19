@@ -129,6 +129,7 @@ export class DynamoDBSubscriptionManager implements ISubscriptionManager {
 
         const name = this.getSubscriptionNameFromEvent(event);
         const time = Math.round(Date.now() / 1000);
+        assert.ok(name, "event-name must be non-empty");
 
         return {
             next: async () => {
