@@ -242,9 +242,9 @@ export class Server extends ApolloServer {
                 // DynamoDB Stream notification
                 else if (event.Records) {
                     if (event.Records[0]?.dynamodb) {
-                        return dynHandler.handle(event, context);
+                        return dynHandler.handle(event);
                     } else {
-                        return sqsHandler.handle(event, context);
+                        return sqsHandler.handle(event);
                     }
                 }
 

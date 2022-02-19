@@ -1,4 +1,4 @@
-import { SQSEvent, SQSRecord, Context as LambdaContext } from "aws-lambda";
+import { SQSEvent, SQSRecord } from "aws-lambda";
 import { loggerFromCaller } from "./helpers";
 import { DynamoDBStreamHandler } from "./DynamoDBStreamHandler";
 
@@ -7,7 +7,7 @@ const logger = loggerFromCaller(__filename);
 
 export class SQSEventHandler extends DynamoDBStreamHandler {
 
-    async handle({ Records }: SQSEvent, context: LambdaContext): Promise<void> {
+    async handle({ Records }: SQSEvent): Promise<void> {
         await Promise.all(Records.map(e =>
             this.handleEvent(e))
         );

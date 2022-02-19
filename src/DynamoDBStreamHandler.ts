@@ -1,4 +1,4 @@
-import { DynamoDBRecord, DynamoDBStreamEvent, Context as LambdaContext } from "aws-lambda";
+import { DynamoDBRecord, DynamoDBStreamEvent } from "aws-lambda";
 import { DynamoDB } from "aws-sdk";
 import { ExecutionResult } from "graphql";
 import { formatMessage, SERVER_EVENT_TYPES } from "./protocol";
@@ -28,7 +28,7 @@ export class DynamoDBStreamHandler {
         this.debug = Boolean(options.debug);
     }
 
-    async handle({ Records }: DynamoDBStreamEvent, context: LambdaContext): Promise<void> {
+    async handle({ Records }: DynamoDBStreamEvent): Promise<void> {
         await Promise.all(Records.map(e =>
             this.handleEvent(e))
         );
