@@ -48,6 +48,7 @@ export function makeServer(schema: GraphQLSchema): Server {
     const subscriptionManager = new DynamoDBSubscriptionManager({
         dynamoDbClient,
         subscriptionsTableName: dynamoTable,
+        debug: true,
     });
 
     return new Server({
