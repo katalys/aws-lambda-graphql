@@ -177,6 +177,10 @@ export class DynamoDBSubscriptionManager implements ISubscriptionManager {
         connection: IConnection,
         operation: IdentifiedOperationRequest,
     ): Promise<unknown> {
+        const id = connection.id;
+        assert.ok(id, "connection.id must be non-empty");
+        assert.ok(operation.operationId, "operation.operationId must be non-empty");
+
         if (this.debug) {
             logger.log("Create subscription", names, connection, operation);
         }
@@ -193,8 +197,9 @@ export class DynamoDBSubscriptionManager implements ISubscriptionManager {
         return this.db.put({
             TableName: this.subscriptionsTableName,
             Item: {
-                id: connection.id,
-                operationId: operation.operationId,
+                id,
+                opId: operation.operationId, // for the key lookup
+                operationId: operation.operationId, // for NodeJS code to reference
                 connection,
                 operation,
                 event: name,
@@ -205,17 +210,21 @@ export class DynamoDBSubscriptionManager implements ISubscriptionManager {
     }
 
     unsubscribe(subscriber: ISubscriber): Promise<unknown> {
+        const id = subscriber.connection.id;
+        const opId = subscriber.operationId;
+        assert.ok(id, "subscriber.connection.id must be non-empty");
+        assert.ok(opId, "subscriber.operationId must be non-empty");
+
         return this.db.delete({
             TableName: this.subscriptionsTableName,
-            Key: {
-                id: subscriber.connection.id,
-                opId: subscriber.operationId,
-            },
+            Key: { id, opId },
         })
             .promise();
     }
 
     async unsubscribeOperation(connectionId: string, operationId: string): Promise<unknown> {
+        assert.ok(connectionId, "connectionId must be non-empty");
+        assert.ok(operationId, "operationId must be non-empty");
         return this.db.delete({
             TableName: this.subscriptionsTableName,
             Key: {
@@ -227,6 +236,7 @@ export class DynamoDBSubscriptionManager implements ISubscriptionManager {
     }
 
     async unsubscribeAllByConnectionId(connectionId: string): Promise<number> {
+        assert.ok(connectionId, "connectionId must be non-empty");
         let cursor: DynamoDB.DocumentClient.Key | undefined = undefined;
         let found = 0;
 
