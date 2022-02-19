@@ -134,7 +134,9 @@ Resources:
                 - dynamodb:PutItem
                 - dynamodb:UpdateItem
                 - dynamodb:Query
-              Resource: !GetAtt ConnectionsDynamoTable.Arn
+              Resource:
+                - !GetAtt ConnectionsDynamoTable.Arn
+                - !Sub '${ConnectionsDynamoTable.Arn}/index/*'
             - Effect: Allow
               Action:
                 - sqs:SendMessage
