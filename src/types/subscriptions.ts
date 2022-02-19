@@ -19,7 +19,7 @@ export interface ISubscriptionManager {
    *
    * @param event
    */
-  subscribersByEvent(event: ISubscriptionEvent): AsyncIterable<ISubscriber[]>;
+  subscribersByEvent(event: ISubscriptionEvent): AsyncIterable<ISubscriber>;
 
   /**
    * Subscribes to events

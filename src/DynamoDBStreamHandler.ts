@@ -64,14 +64,12 @@ export class DynamoDBStreamHandler {
         // make sure that you won't throw any errors otherwise dynamo will call
         // handler with same events again
         const promises = [];
-        for await (const subscribers of this.server.subscriptionManager.subscribersByEvent(event)) {
+        for await (const subscriber of this.server.subscriptionManager.subscribersByEvent(event)) {
             promises.push(
-                subscribers.map(subscriber =>
-                    this.processSubscriber(event, subscriber)
-                        .catch(err => {
-                            logger.error(err);
-                        })
-                )
+                this.processSubscriber(event, subscriber)
+                    .catch(err => {
+                        logger.error("Subscriber failed:", err);
+                    })
             );
         }
 

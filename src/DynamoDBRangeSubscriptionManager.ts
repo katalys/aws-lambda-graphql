@@ -114,55 +114,41 @@ export class DynamoDBRangeSubscriptionManager implements ISubscriptionManager {
       this.getSubscriptionNameFromEvent = getSubscriptionNameFromEvent;
   }
 
-  subscribersByEvent = (
+  async *subscribersByEvent(
       event: ISubscriptionEvent,
-  ): AsyncIterable<ISubscriber[]> & AsyncIterator<ISubscriber[]> => {
-      let ExclusiveStartKey: DynamoDB.DocumentClient.Key | undefined;
-      let done = false;
-
+  ): AsyncGenerator<ISubscriber> {
       const name = this.getSubscriptionNameFromEvent(event);
+      const time = Math.round(Date.now() / 1000);
+      assert.ok(name, "event-name must be non-empty");
 
-      return {
-          next: async () => {
-              if (done) {
-                  return { value: [], done: true };
-              }
+      let ExclusiveStartKey: DynamoDB.DocumentClient.Key | undefined
+      do {
+          const result = await this.db
+            .query({
+                ExclusiveStartKey,
+                TableName: this.subscriptionsTableName,
+                Limit: 50,
+                IndexName: "EventNames",
+                KeyConditionExpression: "event = :event",
+                FilterExpression: "#ttl > :time OR attribute_not_exists(#ttl)",
+                ExpressionAttributeValues: {
+                    ":event": name,
+                    ":time": time,
+                },
+                ExpressionAttributeNames: {
+                    "#ttl": "ttl",
+                },
+            })
+            .promise();
 
-              const time = Math.round(Date.now() / 1000);
-              const result = await this.db
-          .query({
-              ExclusiveStartKey,
-              TableName: this.subscriptionsTableName,
-              Limit: 50,
-              KeyConditionExpression: "event = :event",
-              FilterExpression: "#ttl > :time OR attribute_not_exists(#ttl)",
-              ExpressionAttributeValues: {
-                  ":event": name,
-                  ":time": time,
-              },
-              ExpressionAttributeNames: {
-                  "#ttl": "ttl",
-              },
-          })
-          .promise();
+          // the index has all attributes projected, so we don't have to query them
+          for (const value of result.Items as DynamoDBSubscriber[]) {
+              yield value;
+          }
 
-              ExclusiveStartKey = result.LastEvaluatedKey;
-
-              if (ExclusiveStartKey == null) {
-                  done = true;
-              }
-
-              // we store connectionData on subscription too so we don't
-              // need to load data from src table
-              const value = result.Items as DynamoDBSubscriber[];
-
-              return { value, done: value.length === 0 };
-          },
-          [Symbol.asyncIterator]() {
-              return this;
-          },
-      };
-  };
+          ExclusiveStartKey = result.LastEvaluatedKey;
+      } while (ExclusiveStartKey == null);
+  }
 
   subscribe = async (
       names: string[],
