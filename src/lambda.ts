@@ -17,6 +17,7 @@ export const handler: typeof lambdaHandler = (event, context, cb) => {
 
 function buildMergedSchema(): GraphQLSchema {
     const pubSub = new PubSub({
+        serializeEventPayload: false,
         eventStore: new SQSEventStore({
             queueUrl: process.env.CONNECTIONS_SQS_URL || ""
         })
