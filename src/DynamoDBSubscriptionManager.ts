@@ -154,7 +154,7 @@ export class DynamoDBSubscriptionManager implements ISubscriptionManager {
             }
 
             ExclusiveStartKey = result.LastEvaluatedKey;
-        } while (ExclusiveStartKey == null);
+        } while (ExclusiveStartKey != null);
     }
 
     subscribe(
