@@ -175,7 +175,7 @@ Resources:
           AttributeType: S
         - AttributeName: opId
           AttributeType: S
-        - AttributeName: evt
+        - AttributeName: event
           AttributeType: S
       KeySchema:
         - AttributeName: id
@@ -191,11 +191,9 @@ Resources:
       GlobalSecondaryIndexes:
         - IndexName: EventNames
           Projection:
-            ProjectionType: INCLUDE
-            NonKeyAttributes:
-              - ttl
+            ProjectionType: ALL
           KeySchema:
-            - AttributeName: evt
+            - AttributeName: event
               KeyType: HASH
       TimeToLiveSpecification:
         AttributeName: ttl

@@ -142,7 +142,7 @@ export class DynamoDBSubscriptionManager implements ISubscriptionManager {
                         TableName: this.subscriptionsTableName,
                         Limit: 50,
                         IndexName: "EventNames",
-                        KeyConditionExpression: "evt = :event",
+                        KeyConditionExpression: "event = :event",
                         FilterExpression: "#ttl > :time OR attribute_not_exists(#ttl)",
                         ExpressionAttributeValues: {
                             ":event": name,
