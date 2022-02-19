@@ -30,7 +30,7 @@ export class SQSEventHandler extends DynamoDBStreamHandler {
             promises.push(
                 this.processSubscriber(event, subscriber)
                     .catch(err => {
-                        logger.error("Subscriber failed:", err);
+                        logger.error("Subscriber failed:", subscriber, err);
                     })
             );
         }
