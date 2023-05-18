@@ -1,5 +1,11 @@
 import assert from "assert";
-import { DynamoDB } from "aws-sdk";
+import {
+    BatchWriteCommand,
+    DeleteCommand,
+    DynamoDBDocumentClient,
+    PutCommand,
+    QueryCommand
+} from "@aws-sdk/lib-dynamodb";
 import {
     IConnection,
     ISubscriber,
@@ -8,6 +14,7 @@ import {
     ISubscriptionEvent,
 } from "./types";
 import { computeTTL, loggerFromCaller } from "./helpers";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 
 interface DynamoDBSubscriber extends ISubscriber {
     /**
@@ -24,7 +31,7 @@ interface DynamoDBSubscriptionManagerOptions {
     /**
      * Use this to override default document client (for example if you want to use local dynamodb)
      */
-    dynamoDbClient?: DynamoDB.DocumentClient;
+    dynamoDbClient?: DynamoDBClient;
     /**
      * Subscriptions table name (default is Subscriptions)
      */
@@ -78,7 +85,7 @@ const logger = loggerFromCaller(__filename);
 export class DynamoDBSubscriptionManager implements ISubscriptionManager {
     subscriptionsTableName: string;
 
-    private db: DynamoDB.DocumentClient;
+    private db: DynamoDBDocumentClient;
 
     private ttl: number | false;
 
@@ -92,7 +99,7 @@ export class DynamoDBSubscriptionManager implements ISubscriptionManager {
     ) => string;
 
     constructor({
-        dynamoDbClient = new DynamoDB.DocumentClient(),
+        dynamoDbClient = new DynamoDBClient({ }),
         subscriptionsTableName = "Subscriptions",
         ttl = 7200,
         getSubscriptionNameFromEvent = (event) => event.event,
@@ -114,7 +121,7 @@ export class DynamoDBSubscriptionManager implements ISubscriptionManager {
         assert.ok(typeof debug === "boolean", "Please provide debug as a boolean");
 
         this.subscriptionsTableName = subscriptionsTableName;
-        this.db = dynamoDbClient;
+        this.db = DynamoDBDocumentClient.from(dynamoDbClient);
         this.ttl = ttl;
         this.debug = debug;
         this.getSubscriptionNameFromEvent = getSubscriptionNameFromEvent;
@@ -128,25 +135,23 @@ export class DynamoDBSubscriptionManager implements ISubscriptionManager {
         const time = Math.round(Date.now() / 1000);
         assert.ok(name, "event-name must be non-empty");
 
-        let ExclusiveStartKey: DynamoDB.DocumentClient.Key | undefined
+        let ExclusiveStartKey: any | undefined
         do {
-            const result = await this.db
-                .query({
-                    ExclusiveStartKey,
-                    TableName: this.subscriptionsTableName,
-                    Limit: 50,
-                    IndexName: "EventNames",
-                    KeyConditionExpression: "event = :event",
-                    FilterExpression: "#ttl > :time OR attribute_not_exists(#ttl)",
-                    ExpressionAttributeValues: {
-                        ":event": name,
-                        ":time": time,
-                    },
-                    ExpressionAttributeNames: {
-                        "#ttl": "ttl",
-                    },
-                })
-                .promise();
+            const result = await this.db.send(new QueryCommand({
+                ExclusiveStartKey,
+                TableName: this.subscriptionsTableName,
+                Limit: 50,
+                IndexName: "EventNames",
+                KeyConditionExpression: "event = :event",
+                FilterExpression: "#ttl > :time OR attribute_not_exists(#ttl)",
+                ExpressionAttributeValues: {
+                    ":event": name,
+                    ":time": time,
+                },
+                ExpressionAttributeNames: {
+                    "#ttl": "ttl",
+                },
+            }));
 
             // the index has all attributes projected, so we don't have to query them
             for (const value of result.Items as DynamoDBSubscriber[]) {
@@ -179,7 +184,7 @@ export class DynamoDBSubscriptionManager implements ISubscriptionManager {
 
         const ttlField = { ttl: computeTTL(this.ttl) };
 
-        return this.db.put({
+        return this.db.send(new PutCommand({
             TableName: this.subscriptionsTableName,
             Item: {
                 id,
@@ -190,8 +195,7 @@ export class DynamoDBSubscriptionManager implements ISubscriptionManager {
                 event: name,
                 ...ttlField,
             } as DynamoDBSubscriber,
-        })
-            .promise();
+        }));
     }
 
     unsubscribe(subscriber: ISubscriber): Promise<unknown> {
@@ -200,64 +204,58 @@ export class DynamoDBSubscriptionManager implements ISubscriptionManager {
         assert.ok(id, "subscriber.connection.id must be non-empty");
         assert.ok(opId, "subscriber.operationId must be non-empty");
 
-        return this.db.delete({
+        return this.db.send(new DeleteCommand({
             TableName: this.subscriptionsTableName,
             Key: { id, opId },
-        })
-            .promise();
+        }));
     }
 
     async unsubscribeOperation(connectionId: string, operationId: string): Promise<unknown> {
         assert.ok(connectionId, "connectionId must be non-empty");
         assert.ok(operationId, "operationId must be non-empty");
-        return this.db.delete({
+        return this.db.send(new DeleteCommand({
             TableName: this.subscriptionsTableName,
             Key: {
                 id: connectionId,
                 opId: operationId,
             }
-        })
-            .promise();
+        }));
     }
 
     async unsubscribeAllByConnectionId(connectionId: string): Promise<number> {
         assert.ok(connectionId, "connectionId must be non-empty");
-        let cursor: DynamoDB.DocumentClient.Key | undefined = undefined;
+        let cursor: any | undefined = undefined;
         let found = 0;
 
         do {
             // @ts-ignore TS dislikes this line for some reason
-            const { Items, LastEvaluatedKey } = await this.db
-                .query({
-                    TableName: this.subscriptionsTableName,
-                    ExclusiveStartKey: cursor,
-                    KeyConditionExpression: "#id = :connection_id",
-                    ExpressionAttributeNames: {
-                        "#id": "id",
-                    },
-                    ExpressionAttributeValues: {
-                        ":connection_id": connectionId,
-                    },
-                    Limit: 25, // Maximum of 25 request items sent to DynamoDB a time
-                })
-                .promise();
+            const { Items, LastEvaluatedKey } = await this.db.send(new QueryCommand({
+                TableName: this.subscriptionsTableName,
+                ExclusiveStartKey: cursor,
+                KeyConditionExpression: "#id = :connection_id",
+                ExpressionAttributeNames: {
+                    "#id": "id",
+                },
+                ExpressionAttributeValues: {
+                    ":connection_id": connectionId,
+                },
+                Limit: 25, // Maximum of 25 request items sent to DynamoDB a time
+            }));
 
             if (Items?.length) {
                 found += Items.length;
-                await this.db
-                    .batchWrite({
-                        RequestItems: {
-                            [this.subscriptionsTableName]: Items.map((item) => ({
-                                DeleteRequest: {
-                                    Key: {
-                                        id: item.id,
-                                        opId: item.opId,
-                                    },
+                await this.db.send(new BatchWriteCommand({
+                    RequestItems: {
+                        [this.subscriptionsTableName]: Items.map((item) => ({
+                            DeleteRequest: {
+                                Key: {
+                                    id: item.id,
+                                    opId: item.opId,
                                 },
-                            })),
-                        },
-                    })
-                    .promise();
+                            },
+                        })),
+                    },
+                }));
             }
 
             cursor = LastEvaluatedKey;

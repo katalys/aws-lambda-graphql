@@ -1,5 +1,5 @@
 import { IEventStore, ISubscriptionEvent } from "./types";
-import { SQS } from "aws-sdk";
+import { SQS } from "@aws-sdk/client-sqs";
 import assert from "assert";
 
 interface SQSEventStoreOptions {
@@ -21,7 +21,7 @@ export class SQSEventStore implements IEventStore {
     private sqsClient: SQS;
 
     constructor({
-        sqsClient = new SQS(),
+        sqsClient = new SQS({ }),
         queueUrl,
     }: SQSEventStoreOptions) {
         assert.ok(
@@ -37,6 +37,6 @@ export class SQSEventStore implements IEventStore {
         return this.sqsClient.sendMessage({
             QueueUrl: this.queueUrl,
             MessageBody: JSON.stringify(event),
-        }).promise();
+        });
     }
 }

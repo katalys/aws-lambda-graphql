@@ -1,5 +1,6 @@
 /* eslint-disable no-console, no-process-env */
-import { ApiGatewayManagementApi, DynamoDB } from "aws-sdk";
+import { ApiGatewayManagementApi } from "@aws-sdk/client-apigatewaymanagementapi";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { PubSub } from "./PubSub";
 import { DynamoDBSubscriptionManager } from "./DynamoDBSubscriptionManager";
 import { DynamoDBConnectionManager } from "./DynamoDBConnectionManager";
@@ -37,7 +38,7 @@ export function makeServer(schema: GraphQLSchema): Server {
         dynamoTable = dynamoTable.split("/")[1];
     }
 
-    const dynamoDbClient = new DynamoDB.DocumentClient({
+    const dynamoDbClient = new DynamoDBClient({
         // use serverless-dynamodb endpoint in offline mode
         ...(IS_TEST
             ? {

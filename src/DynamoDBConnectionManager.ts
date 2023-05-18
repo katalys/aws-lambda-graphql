@@ -1,5 +1,7 @@
 import assert from "assert";
-import { ApiGatewayManagementApi, DynamoDB } from "aws-sdk";
+import { ApiGatewayManagementApi } from "@aws-sdk/client-apigatewaymanagementapi";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { ConnectionNotFoundError } from "./errors";
 import {
     HydrateConnectionOptions,
@@ -34,7 +36,7 @@ interface DynamoDBConnectionManagerOptions {
     /**
      * Use this to override default document client (for example if you want to use local dynamodb)
      */
-    dynamoDbClient?: DynamoDB.DocumentClient;
+    dynamoDbClient?: DynamoDBClient;
     subscriptions: ISubscriptionManager;
     /**
      * Optional TTL for src (stored in ttl field) in seconds
@@ -61,7 +63,7 @@ export class DynamoDBConnectionManager implements IConnectionManager {
 
     private connectionsTable: string;
 
-    private db: DynamoDB.DocumentClient;
+    private db: DynamoDBDocumentClient;
 
     private subscriptions: ISubscriptionManager;
 
@@ -101,7 +103,7 @@ export class DynamoDBConnectionManager implements IConnectionManager {
 
         this.apiGatewayManager = apiGatewayManager;
         this.connectionsTable = connectionsTable;
-        this.db = dynamoDbClient || new DynamoDB.DocumentClient();
+        this.db = DynamoDBDocumentClient.from(dynamoDbClient || new DynamoDBClient({ }));
         this.subscriptions = subscriptions;
         this.ttl = ttl;
         this.debug = debug;
@@ -116,15 +118,13 @@ export class DynamoDBConnectionManager implements IConnectionManager {
         let connection;
 
         for (let i = 0; i <= retryCount; i++) {
-            const result = await this.db
-                .get({
-                    TableName: this.connectionsTable,
-                    Key: {
-                        id: connectionId,
-                        opId: "@", // cannot be empty, should be sorted first by UTF-8 code
-                    },
-                })
-                .promise();
+            const result = await this.db.send(new GetCommand({
+                TableName: this.connectionsTable,
+                Key: {
+                    id: connectionId,
+                    opId: "@", // cannot be empty, should be sorted first by UTF-8 code
+                },
+            }));
 
             if (result.Item) {
                 // Jump out of loop
@@ -149,22 +149,20 @@ export class DynamoDBConnectionManager implements IConnectionManager {
     ): Promise<void> {
         assert.ok(id, "connection.id must be provided");
         try {
-            await this.db
-                .update({
-                    TableName: this.connectionsTable,
-                    Key: {
-                        id,
-                        opId: "@", // cannot be empty, should be sorted first by UTF-8 code
-                    },
-                    UpdateExpression: "set #data = :data",
-                    ExpressionAttributeValues: {
-                        ":data": data,
-                    },
-                    ExpressionAttributeNames: {
-                        "#data": "data",
-                    },
-                })
-                .promise();
+            await this.db.send(new UpdateCommand({
+                TableName: this.connectionsTable,
+                Key: {
+                    id,
+                    opId: "@", // cannot be empty, should be sorted first by UTF-8 code
+                },
+                UpdateExpression: "set #data = :data",
+                ExpressionAttributeValues: {
+                    ":data": data,
+                },
+                ExpressionAttributeNames: {
+                    "#data": "data",
+                },
+            }));
         } catch (err) {
             logger.error(`setConnectionData(${id}):`, err, data);
             throw err;
@@ -184,18 +182,16 @@ export class DynamoDBConnectionManager implements IConnectionManager {
             logger.debug(`Connection open ${connection.id}`, connection.data);
         }
         try {
-            await this.db
-                .put({
-                    TableName: this.connectionsTable,
-                    Item: {
-                        id: connection.id,
-                        opId: "@", // cannot be empty, should be sorted first by UTF-8 code
-                        data: connection.data,
-                        createdAt: new Date().toString(),
-                        ttl: computeTTL(this.ttl),
-                    },
-                })
-                .promise();
+            await this.db.send(new PutCommand({
+                TableName: this.connectionsTable,
+                Item: {
+                    id: connection.id,
+                    opId: "@", // cannot be empty, should be sorted first by UTF-8 code
+                    data: connection.data,
+                    createdAt: new Date().toString(),
+                    ttl: computeTTL(this.ttl),
+                },
+            }));
         } catch (err) {
             logger.error(`registerConnection():`, err);
             throw err;
@@ -216,9 +212,8 @@ export class DynamoDBConnectionManager implements IConnectionManager {
             await this.createApiGatewayManager(connection.data.endpoint)
                 .postToConnection({
                     ConnectionId: connection.id,
-                    Data: payload
-                })
-                .promise();
+                    Data: Buffer.from(payload)
+                });
         } catch (e: any) {
             // this is stale connection
             // remove it from DB
@@ -239,15 +234,13 @@ export class DynamoDBConnectionManager implements IConnectionManager {
         }
 
         await Promise.all([
-            this.db
-                .delete({
-                    TableName: this.connectionsTable,
-                    Key: {
-                        id,
-                        opId: "@", // cannot be empty, should be sorted first by UTF-8 code
-                    },
-                })
-                .promise(),
+            this.db.send(new DeleteCommand({
+                TableName: this.connectionsTable,
+                Key: {
+                    id,
+                    opId: "@", // cannot be empty, should be sorted first by UTF-8 code
+                },
+            })),
             this.subscriptions.unsubscribeAllByConnectionId(id),
         ]);
     }
@@ -258,8 +251,7 @@ export class DynamoDBConnectionManager implements IConnectionManager {
             logger.debug("Connection closed", id);
         }
         await this.createApiGatewayManager(data.endpoint)
-            .deleteConnection({ ConnectionId: id })
-            .promise();
+            .deleteConnection({ ConnectionId: id });
     }
 
     /**
@@ -268,8 +260,11 @@ export class DynamoDBConnectionManager implements IConnectionManager {
      * If custom api gateway manager is provided, uses it instead
      */
     private createApiGatewayManager(endpoint: string): ApiGatewayManagementApi {
-        if (this.apiGatewayManager?.endpoint.href == endpoint) {
-            return this.apiGatewayManager;
+        if (this.apiGatewayManager) {
+            const cur = this.apiGatewayManager?.config.endpointProvider({});
+            if (cur?.url.href == endpoint) {
+                return this.apiGatewayManager
+            }
         }
 
         this.apiGatewayManager = new ApiGatewayManagementApi({ endpoint });

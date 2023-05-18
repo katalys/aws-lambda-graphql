@@ -37,6 +37,11 @@
     "lint": "eslint src/ --ext .js,.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.332.0",
+    "@aws-sdk/client-dynamodb": "^3.332.0",
+    "@aws-sdk/client-sqs": "^3.332.0",
+    "@aws-sdk/lib-dynamodb": "^3.332.0",
+    "@aws-sdk/util-dynamodb": "^3.332.0",
     "@graphql-tools/schema": "^8.3.1",
     "@graphql-tools/utils": "^8.5.5",
     "apollo-server-lambda": "^3.6.1",

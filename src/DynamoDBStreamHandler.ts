@@ -1,5 +1,5 @@
 import { DynamoDBRecord, DynamoDBStreamEvent } from "aws-lambda";
-import { DynamoDB } from "aws-sdk";
+import { unmarshall } from "@aws-sdk/util-dynamodb";
 import { ExecutionResult } from "graphql";
 import { formatMessage, SERVER_EVENT_TYPES } from "./protocol";
 import { Server } from "./Server";
@@ -42,7 +42,7 @@ export class DynamoDBStreamHandler {
         }
 
         // now construct event from dynamodb image
-        const event = DynamoDB.Converter.unmarshall(
+        const event = unmarshall(
             record.dynamodb.NewImage as any,
         ) as IDynamoDBSubscriptionEvent;
 

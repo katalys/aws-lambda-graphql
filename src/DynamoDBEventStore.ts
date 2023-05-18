@@ -1,5 +1,6 @@
 import assert from "assert";
-import { DynamoDB } from "aws-sdk";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { ulid } from "ulid";
 import { IEventStore, ISubscriptionEvent } from "./types";
 import { computeTTL } from "./helpers";
@@ -15,7 +16,7 @@ interface DynamoDBEventStoreOptions {
     /**
      * Use this to override default document client (for example if you want to use local dynamodb)
      */
-    dynamoDbClient?: DynamoDB.DocumentClient;
+    dynamoDbClient?: DynamoDBClient;
     /**
      * Events table name (default is Events)
      */
@@ -38,14 +39,14 @@ interface DynamoDBEventStoreOptions {
  * The server uses DynamoDBStreamHandler to process these events.
  */
 export class DynamoDBEventStore implements IEventStore {
-    private db: DynamoDB.DocumentClient;
+    private db: DynamoDBDocumentClient;
 
     private tableName: string;
 
     private ttl: number | false;
 
     constructor({
-        dynamoDbClient = new DynamoDB.DocumentClient(),
+        dynamoDbClient = new DynamoDBClient({ }),
         eventsTable = "Events",
         ttl = 7200, // default: 2 hours
     }: DynamoDBEventStoreOptions = {}) {
@@ -54,7 +55,7 @@ export class DynamoDBEventStore implements IEventStore {
             "Please provide ttl as a number greater than 0 or false to turn it off",
         );
         assert.ok(
-            dynamoDbClient instanceof DynamoDB.DocumentClient,
+            dynamoDbClient instanceof DynamoDBDocumentClient,
             "Please provide dynamoDbClient as an instance of DynamoDB.DocumentClient",
         );
         assert.ok(
@@ -62,21 +63,19 @@ export class DynamoDBEventStore implements IEventStore {
             "Please provide eventsTable as a string",
         );
 
-        this.db = dynamoDbClient;
+        this.db = DynamoDBDocumentClient.from(dynamoDbClient);
         this.tableName = eventsTable;
         this.ttl = ttl;
     }
 
     publish(event: ISubscriptionEvent): Promise<unknown> {
-        return this.db
-            .put({
-                TableName: this.tableName,
-                Item: {
-                    id: ulid(),
-                    ttl: computeTTL(this.ttl),
-                    ...event,
-                },
-            })
-            .promise();
+        return this.db.send(new PutCommand({
+            TableName: this.tableName,
+            Item: {
+                id: ulid(),
+                ttl: computeTTL(this.ttl),
+                ...event,
+            },
+        }));
     }
 }
